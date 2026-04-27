@@ -22,7 +22,7 @@ import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/students")
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
+@CrossOrigin(origins = {"*"})
 public class StudentController {
 
     @Autowired

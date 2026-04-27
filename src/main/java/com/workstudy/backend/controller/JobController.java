@@ -17,7 +17,7 @@ import com.workstudy.backend.service.MatchingEngine;
 
 @RestController
 @RequestMapping("/api/jobs")
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
+@CrossOrigin(origins = {"*"})
 public class JobController {
 
     @Autowired

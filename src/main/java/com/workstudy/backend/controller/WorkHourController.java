@@ -18,7 +18,7 @@ import java.text.SimpleDateFormat;
 
 @RestController
 @RequestMapping("/api/hours")
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
+@CrossOrigin(origins = {"*"})
 public class WorkHourController {
 
     @Autowired
