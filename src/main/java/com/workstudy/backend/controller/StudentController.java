@@ -1,8 +1,9 @@
 package com.workstudy.backend.controller;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -12,8 +13,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.workstudy.backend.model.Student;
-import com.workstudy.backend.repository.StudentRepository;
 import com.workstudy.backend.repository.ApplicationRepository;
+import com.workstudy.backend.repository.StudentRepository;
 import com.workstudy.backend.repository.WorkHourRepository;
 import com.workstudy.backend.service.EmailService;
 
@@ -36,47 +37,44 @@ public class StudentController {
     @Autowired
     private EmailService emailService;
 
-    BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+    // It's generally better to inject this via @Autowired PasswordEncoder, 
+    // but leaving it as-is to ensure compatibility with your current setup.
+    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     // ✅ TEST ENDPOINT (VERY IMPORTANT)
     @GetMapping("/test")
-    public String test() {
-        return "✅ Student API is working!";
+    public ResponseEntity<String> test() {
+        return ResponseEntity.ok("✅ Student API is working!");
     }
 
     // ✅ REGISTER
     @PostMapping("/register")
-    public Student register(@RequestBody Student student) {
-
+    public ResponseEntity<Student> register(@RequestBody Student student) {
         if (studentRepository.findByEmailIgnoreCase(student.getEmail()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Account already exists");
         }
 
         student.setPassword(encoder.encode(student.getPassword()));
 
-        if (student.getRole() == null) {
+        if (student.getRole() == null || student.getRole().isEmpty()) {
             student.setRole("student");
         }
 
-        return studentRepository.save(student);
+        Student savedStudent = studentRepository.save(student);
+        return ResponseEntity.status(HttpStatus.CREATED).body(savedStudent);
     }
 
     // ✅ LOGIN
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody Student req) {
-
+    public ResponseEntity<Map<String, Object>> login(@RequestBody Student req) {
         Student s = studentRepository.findByEmailIgnoreCase(req.getEmail())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "User not registered"
-                ));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not registered"));
 
         if (!encoder.matches(req.getPassword(), s.getPassword())) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED, "Invalid password"
-            );
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid password");
         }
 
-        // Generate OTP
+        // Generate a 6-digit OTP
         String otp = String.format("%06d", new java.util.Random().nextInt(999999));
         s.setMfaCode(otp);
         studentRepository.save(s);
@@ -93,7 +91,6 @@ public class StudentController {
     // ✅ VERIFY MFA
     @PostMapping("/verify-mfa")
     public ResponseEntity<Student> verifyMfa(@RequestBody Map<String, String> req) {
-
         String email = req.get("email");
         String code = req.get("code");
 
@@ -101,7 +98,7 @@ public class StudentController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         if (s.getMfaCode() != null && s.getMfaCode().equals(code)) {
-            s.setMfaCode(null);
+            s.setMfaCode(null); // Clear OTP after successful verification
             studentRepository.save(s);
             return ResponseEntity.ok(s);
         } else {
@@ -111,8 +108,7 @@ public class StudentController {
 
     // ✅ FORGOT PASSWORD OTP
     @PostMapping("/forgot-password-otp")
-    public ResponseEntity<?> sendOtp(@RequestBody Map<String, String> req) {
-
+    public ResponseEntity<Map<String, Object>> sendOtp(@RequestBody Map<String, String> req) {
         String email = req.get("email");
 
         Student s = studentRepository.findByEmailIgnoreCase(email)
@@ -132,8 +128,7 @@ public class StudentController {
 
     // ✅ RESET PASSWORD
     @PutMapping("/reset-password")
-    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> req) {
-
+    public ResponseEntity<Map<String, String>> resetPassword(@RequestBody Map<String, String> req) {
         String email = req.get("email");
         String code = req.get("code");
         String newPassword = req.get("newPassword");
@@ -142,7 +137,6 @@ public class StudentController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         if (s.getMfaCode() != null && s.getMfaCode().equals(code)) {
-
             s.setPassword(encoder.encode(newPassword));
             s.setMfaCode(null);
             studentRepository.save(s);
@@ -155,8 +149,7 @@ public class StudentController {
 
     // ✅ OAUTH LOGIN
     @PostMapping("/oauth-login")
-    public Student oauthLogin(@RequestBody Map<String, String> req) {
-
+    public ResponseEntity<Student> oauthLogin(@RequestBody Map<String, String> req) {
         String email = req.get("email");
         String name = req.get("name");
         String provider = req.get("authProvider");
@@ -169,7 +162,7 @@ public class StudentController {
             s.setEmail(email);
             s.setName(name);
             s.setAuthProvider(provider);
-            s.setPassword(encoder.encode(java.util.UUID.randomUUID().toString()));
+            s.setPassword(encoder.encode(UUID.randomUUID().toString())); // Secure random password for OAuth users
             s.setRole(role);
         } else {
             if (!role.equals(s.getRole())) {
@@ -177,21 +170,23 @@ public class StudentController {
             }
         }
 
-        return studentRepository.save(s);
+        return ResponseEntity.ok(studentRepository.save(s));
     }
 
     // ✅ GET ALL STUDENTS
     @GetMapping
-    public List<Student> getAllStudents() {
-        return studentRepository.findAll();
+    public ResponseEntity<List<Student>> getAllStudents() {
+        return ResponseEntity.ok(studentRepository.findAll());
     }
 
     // ✅ DELETE ACCOUNT
     @DeleteMapping("/{id}")
     @Transactional
-    public void deleteAccount(@PathVariable Long id) {
+    public ResponseEntity<Map<String, String>> deleteAccount(@PathVariable Long id) {
         workHourRepository.deleteByStudentId(id);
         applicationRepository.deleteByStudentId(id);
         studentRepository.deleteById(id);
+        
+        return ResponseEntity.ok(Map.of("message", "Account deleted successfully"));
     }
 }
